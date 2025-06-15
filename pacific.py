@@ -18,10 +18,16 @@ data_raw.columns = [
 data_clean = data_raw[1:].copy()
 data_clean = data_clean[data_clean["Sector"].notna()].reset_index(drop=True)
 
+# Konversi ke numerik
 for col in data_clean.columns[1:]:
     data_clean[col] = pd.to_numeric(data_clean[col], errors='coerce')
 
+# Hitung rasio dengan menghindari pembagian nol
 data_clean["Losses to Damage Ratio"] = data_clean["Losses (VT millions)"] / data_clean["Damage (VT millions)"]
+data_clean["Losses to Damage Ratio"].replace([float("inf"), -float("inf")], None, inplace=True)
+data_clean = data_clean[data_clean["Losses to Damage Ratio"].notnull()]
+
+# Hapus baris-baris tidak relevan
 data1 = data_clean[~data_clean["Sector"].isin(["Grand Total", "Source: Vanuatu PDNA, Pam 2015"])].copy()
 
 # === Load Data 2: Summary of Recovery and Reconstruction Needs ===
@@ -78,28 +84,44 @@ if indikator == "Total Dampak Ekonomi":
 elif indikator == "Rasio Losses/Damage":
     st.subheader("Visualisasi Rasio Kerugian terhadap Kerusakan")
 
-    # Tambah slider interaktif untuk filter rasio
-    min_ratio = float(filtered_data1["Losses to Damage Ratio"].min())
-    max_ratio = float(filtered_data1["Losses to Damage Ratio"].max())
-    ratio_range = st.sidebar.slider("Filter Rasio Losses ÷ Damage", min_value=0.0, max_value=5.0,
-                                    value=(min_ratio, max_ratio), step=0.1)
+    # Cek jika ada data valid
+    if not filtered_data1.empty and filtered_data1["Losses to Damage Ratio"].notnull().any():
+        # Pastikan tidak ada inf/nan
+        filtered_data1 = filtered_data1.replace([float("inf"), -float("inf")], None)
+        filtered_data1 = filtered_data1[filtered_data1["Losses to Damage Ratio"].notnull()]
 
-    ratio_filtered = filtered_data1[
-        (filtered_data1["Losses to Damage Ratio"] >= ratio_range[0]) &
-        (filtered_data1["Losses to Damage Ratio"] <= ratio_range[1])
-    ]
+        min_ratio = float(filtered_data1["Losses to Damage Ratio"].min())
+        max_ratio = float(filtered_data1["Losses to Damage Ratio"].max())
 
-    fig2 = px.bar(
-        ratio_filtered.sort_values("Losses to Damage Ratio", ascending=True),
-        x="Losses to Damage Ratio",
-        y="Sector",
-        orientation="h",
-        labels={"Losses to Damage Ratio": "Rasio Losses ÷ Damage"},
-        title="Rasio Kerugian Ekonomi dibanding Kerusakan Fisik per Sektor",
-        hover_data=["Damage (VT millions)", "Losses (VT millions)"]
-    )
-    fig2.update_traces(texttemplate="%{x:.2f}", textposition="outside")
-    st.plotly_chart(fig2, use_container_width=True)
+        # Batasi max slider agar tidak lebih dari 5.0 untuk kestabilan UI
+        upper_limit = min(max_ratio, 5.0)
+
+        ratio_range = st.sidebar.slider(
+            "Filter Rasio Losses ÷ Damage",
+            min_value=0.0,
+            max_value=float(upper_limit),
+            value=(float(min_ratio), float(upper_limit)),
+            step=0.1
+        )
+
+        ratio_filtered = filtered_data1[
+            (filtered_data1["Losses to Damage Ratio"] >= ratio_range[0]) &
+            (filtered_data1["Losses to Damage Ratio"] <= ratio_range[1])
+        ]
+
+        fig2 = px.bar(
+            ratio_filtered.sort_values("Losses to Damage Ratio", ascending=True),
+            x="Losses to Damage Ratio",
+            y="Sector",
+            orientation="h",
+            labels={"Losses to Damage Ratio": "Rasio Losses ÷ Damage"},
+            title="Rasio Kerugian Ekonomi dibanding Kerusakan Fisik per Sektor",
+            hover_data=["Damage (VT millions)", "Losses (VT millions)"]
+        )
+        fig2.update_traces(texttemplate="%{x:.2f}", textposition="outside")
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.warning("Tidak ada data rasio yang valid untuk ditampilkan.")
 
 # === Visualisasi 3: Kebutuhan Recovery dan Reconstruction ===
 elif indikator == "Kebutuhan Recovery":
